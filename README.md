@@ -37,6 +37,12 @@ flowchart TD
 
 ---
 
+## Arquitectura
+
+<p align="center"><img src="docs/arquitectura.png" alt="Arquitectura: entradas, pasos dentro de n8n y salidas" width="900"></p>
+
+---
+
 ## Demo
 
 <!-- VIDEO: arrastra aquí el .mp4 al editar el README en GitHub y deja solo la URL que genera. -->
@@ -63,6 +69,15 @@ Términos que conviene conocer:
 | WooCommerce **reintenta** el aviso si no recibe respuesta, y manda uno nuevo cada vez que alguien toca el pedido | Cada aviso descuenta otra vez y el inventario se vacía solo | El stock se mueve **una vez por pedido**. El estado de cada pedido queda guardado en la hoja |
 | Cualquiera que conozca la URL del webhook puede **inventar pedidos** | Un pedido falso descuenta stock real | Se verifica la **firma** sobre el cuerpo exacto; sin firma válida responde 401 y no toca nada |
 | Un pedido se **cancela sin haber pagado** | Se "devuelve" stock que nunca salió y el inventario se infla | Solo se devuelve si antes se había descontado |
+
+---
+
+## Pruebas
+
+<p align="center"><img src="docs/pruebas.png" alt="Resultados de las pruebas automáticas y de la verificación en n8n real" width="900"></p>
+
+La integración continua corre todos los tests en cada push. Lo de la columna
+derecha se verificó importando los workflows en n8n 2.40 con Docker.
 
 ---
 
