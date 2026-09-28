@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sincronización de tienda · demo</title>
+<style>
+  :root {
+    --bg: #f1f0ec; --panel: #fff; --texto: #231f1a; --suave: #6f675e; --borde: #dcd6cc;
+    --acento: #7a4b2a; --ok: #1f8a4c; --bajo: #b4561b; --mal: #b3261e; --gris: #857d73;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16130f; --panel: #211d18; --texto: #eee8e0; --suave: #a79d91; --borde: #3a332b;
+      --acento: #d39a6a; --ok: #4cc07f; --bajo: #f0934f; --mal: #f07b72; --gris: #968c80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+         background: var(--bg); color: var(--texto); }
+  main { max-width: 1180px; margin: 0 auto; padding: 22px 16px;
+         display: grid; grid-template-columns: 1fr 380px; gap: 18px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  section { background: var(--panel); border: 1px solid var(--borde); border-radius: 12px; padding: 16px; }
+  h1 { font-size: 19px; margin: 0; }
+  h2 { font-size: 12px; margin: 0 0 10px; color: var(--suave); text-transform: uppercase; letter-spacing: .05em; }
+  .sub { color: var(--suave); margin: 2px 0 12px; }
+  .barra { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  select, input, button { font: inherit; color: inherit; border-radius: 8px; }
+  select, input { background: var(--bg); border: 1px solid var(--borde); padding: 7px 9px; }
+  input { min-width: 260px; flex: 1; }
+  button { border: 0; background: var(--acento); color: #fff; padding: 7px 12px; cursor: pointer; }
+  button.sec { background: transparent; color: var(--texto); border: 1px solid var(--borde); }
+  button:disabled { opacity: .5; cursor: default; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+  .prod { border: 1px solid var(--borde); border-radius: 10px; padding: 10px; display: grid; gap: 6px; }
+  .prod b { font-size: 13px; }
+  .sku { color: var(--suave); font-size: 12px; }
+  .stock { font-size: 22px; font-weight: 700; }
+  .stock.bajo { color: var(--bajo); } .stock.cero { color: var(--mal); }
+  .pedidos { display: grid; gap: 8px; }
+  .ped { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; border-top: 1px solid var(--borde); padding-top: 8px; }
+  .ped span { flex: 1; min-width: 160px; }
+  .ped button { padding: 4px 8px; font-size: 12px; }
+  ol { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+  .accion-descontar { color: var(--ok); } .accion-devolver { color: var(--acento); }
+  .accion-ignorado { color: var(--gris); } .accion-rechazado { color: var(--mal); }
+  .alerta { color: var(--bajo); } .alerta.sobreventa { color: var(--mal); font-weight: 600; }
+  aside { display: grid; gap: 18px; align-content: start; }
+</style>
+</head>
+<body>
+<main>
+  <div style="display:grid;gap:18px">
+    <section>
+      <h1 id="tienda">Tienda</h1>
+      <p class="sub">Cada botón genera el aviso que WooCommerce mandaría a n8n, firmado con la clave de la demo.</p>
+      <div class="barra">
+        <select id="modo">
+          <option value="simulado">Simulado (sin n8n)</option>
+          <option value="n8n">n8n real</option>
+        </select>
+        <input id="url" value="http://localhost:5678/webhook/tienda-demo">
+        <button class="sec" id="reiniciar">Stock inicial</button>
+      </div>
+    </section>
+    <section>
+      <h2>Inventario</h2>
+      <div class="grid" id="productos"></div>
+    </section>
+    <section>
+      <h2>Pedidos</h2>
+      <div class="barra">
+        <button id="falso" class="sec">Pedido falso (firma inválida)</button>
+      </div>
+      <div class="pedidos" id="pedidos"></div>
+    </section>
+  </div>
+  <aside>
+    <section><h2>Qué hizo el flujo</h2><ol id="log" reversed></ol></section>
+    <section><h2>Alertas al equipo</h2><ol id="alertas" reversed></ol></section>
+  </aside>
+</main>
+
+<script src="motor.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const CLAVE_DEMO = 'clave-demo-no-usar-en-produccion';
+  let estado, pedidos, siguiente;
+
+  function el(tag, props = {}, ...hijos) {
+    const e = Object.assign(document.createElement(tag), props);
+    e.append(...hijos);
+    return e;
+  }
+
+  async function firmar(cuerpo, secreto) {
+    const clave = await crypto.subtle.importKey('raw', new TextEncoder().encode(secreto),
+      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const firma = await crypto.subtle.sign('HMAC', clave, new TextEncoder().encode(cuerpo));
+    return btoa(String.fromCharCode(...new Uint8Array(firma)));
+  }
+
+  function base() {
+    return $('url').value.replace(/\/$/, '');
+  }
+
+  async function enviar(pedido, secreto = CLAVE_DEMO) {
+    const cuerpo = JSON.stringify(pedido);
+    let r;
+    if ($('modo').value === 'simulado') {
+      r = MotorTienda.procesarEvento(cuerpo, secreto === CLAVE_DEMO, estado, new Date().toISOString());
+    } else {
+      const res = await fetch(base(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json',
+                   'X-WC-Webhook-Signature': await firmar(cuerpo, secreto) },
+        body: cuerpo,
+      });
+      r = await res.json();
+      await cargarInventario();
+    }
+    registrar(r);
+    pintar();
+  }
+
+  function registrar(r) {
+    const detalle = r.motivo || r.movimientos.map((m) => `${m.sku} ${m.cantidad > 0 ? '+' : ''}${m.cantidad}`).join(', ');
+    $('log').prepend(el('li', {},
+      el('b', { className: 'accion-' + r.accion, textContent: r.accion }),
+      ` #${r.pedido_id || '—'} ${r.estado_pedido ? '(' + r.estado_pedido + ')' : ''}: ${detalle}`));
+    for (const a of r.alertas) {
+      $('alertas').prepend(el('li', { className: 'alerta ' + a.tipo, textContent: a.mensaje }));
+    }
+  }
+
+  async function cargarInventario() {
+    const res = await fetch(base() + '/inventario');
+    const datos = await res.json();
+    estado = { inventario: MotorTienda.inventarioDesdeFilas(datos.productos) };
+  }
+
+  function pintar() {
+    $('productos').replaceChildren(...Object.values(estado.inventario).map((p) => {
+      const clase = p.stock <= 0 ? 'cero' : p.stock < p.minimo ? 'bajo' : '';
+      const comprar = (n) => el('button', { className: n > 1 ? 'sec' : '', textContent: `Comprar ${n}`,
+        onclick: () => nuevoPedido(p.sku, n) });
+      return el('div', { className: 'prod' },
+        el('b', { textContent: p.nombre }), el('span', { className: 'sku', textContent: `${p.sku} · mínimo ${p.minimo}` }),
+        el('span', { className: 'stock ' + clase, textContent: p.stock }),
+        el('div', { className: 'barra' }, comprar(1), comprar(3)));
+    }));
+    $('pedidos').replaceChildren(...pedidos.map((p) => el('div', { className: 'ped' },
+      el('span', { textContent: `#${p.id} · ${p.line_items[0].quantity} × ${p.line_items[0].sku} · ${p.status}` }),
+      el('button', { className: 'sec', textContent: 'Reenviar aviso', onclick: () => enviar(p) }),
+      el('button', { className: 'sec', textContent: 'Cancelar', onclick: () => cambiar(p, 'cancelled') }),
+      el('button', { className: 'sec', textContent: 'Completar', onclick: () => cambiar(p, 'completed') }))));
+  }
+
+  function nuevoPedido(sku, cantidad) {
+    const p = { id: siguiente++, status: 'processing', date_modified: new Date().toISOString().slice(0, 19),
+                line_items: [{ sku, quantity: cantidad, name: estado.inventario[sku].nombre }] };
+    pedidos.unshift(p);
+    enviar(p);
+  }
+
+  function cambiar(p, status) {
+    p.status = status;
+    enviar(p);
+  }
+
+  async function reiniciar() {
+    pedidos = []; siguiente = 5001;
+    $('log').replaceChildren(); $('alertas').replaceChildren();
+    if ($('modo').value === 'n8n') {
+      await fetch(base() + '/reiniciar', { method: 'POST' });
+      await cargarInventario();
+    } else {
+      estado = { inventario: MotorTienda.inventarioDesdeFilas(MotorTienda.INVENTARIO_INICIAL.productos) };
+    }
+    pintar();
+  }
+
+  $('falso').onclick = () => enviar({ id: 9999, status: 'processing',
+    line_items: [{ sku: 'CAF-VRS-1K', quantity: 10, name: 'pedido inventado' }] }, 'clave-equivocada');
+  $('reiniciar').onclick = reiniciar;
+  $('modo').onchange = reiniciar;
+  $('tienda').textContent = MotorTienda.INVENTARIO_INICIAL.tienda;
+  reiniciar();
+</script>
+</body>
+</html>
