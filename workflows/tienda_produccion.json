@@ -1,0 +1,523 @@
+{
+  "id": "tiendaprod",
+  "name": "Sincronización de tienda · producción",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "woocommerce-pedidos",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*",
+          "rawBody": true
+        }
+      },
+      "id": "wh-1",
+      "name": "Webhook · Pedido de WooCommerce",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "woocommerce-pedidos"
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "binaryPropertyName": "data",
+        "destinationKey": "cuerpo",
+        "options": {}
+      },
+      "id": "raw-1",
+      "name": "Leer cuerpo exacto",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        220,
+        300
+      ],
+      "notes": "Guarda el cuerpo tal como llegó: la firma se calcula sobre esos bytes."
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_ID_HOJA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Inventario",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "gs-inv",
+      "name": "Sheets · Leer inventario",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        440,
+        300
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_ID_HOJA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Pedidos",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "gs-ped",
+      "name": "Sheets · Leer pedidos",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        660,
+        300
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Nodo Code de n8n: \"Aplicar pedido al stock\"\n// Espejo en JavaScript de src/sync_tienda.py (misma lógica, misma salida).\n// La paridad entre ambos la verifica tests/test_paridad_js.py.\n//\n// scripts/build_workflow.py reemplaza los marcadores:\n//   REGISTRO  'memoria' (demo, stock en la memoria del workflow)\n//             'sheets'  (producción, stock y pedidos en Google Sheets)\n//   SECRETO   la clave con la que WooCommerce firma los avisos\n//   INVENTARIO_INICIAL  data/inventario.json (solo lo usa la demo)\n\nconst REGISTRO = 'sheets';\nconst SECRETO = $env.WC_WEBHOOK_SECRET;\nconst INVENTARIO_INICIAL = {\n  \"tienda\": \"Tostaduría Selva Alta\",\n  \"nota\": \"Tienda ficticia. Productos, precios y stock inventados para la demostración.\",\n  \"productos\": [\n    {\n      \"sku\": \"CAF-VRS-250\",\n      \"product_id\": 101,\n      \"nombre\": \"Café Villa Rica tostado 250 g\",\n      \"stock\": 40,\n      \"minimo\": 10\n    },\n    {\n      \"sku\": \"CAF-VRS-1K\",\n      \"product_id\": 102,\n      \"nombre\": \"Café Villa Rica tostado 1 kg\",\n      \"stock\": 12,\n      \"minimo\": 4\n    },\n    {\n      \"sku\": \"CAF-CHA-250\",\n      \"product_id\": 103,\n      \"nombre\": \"Café Chanchamayo orgánico 250 g\",\n      \"stock\": 25,\n      \"minimo\": 8\n    },\n    {\n      \"sku\": \"CAF-CUS-250\",\n      \"product_id\": 104,\n      \"nombre\": \"Café Cusco geisha 250 g\",\n      \"stock\": 6,\n      \"minimo\": 3\n    },\n    {\n      \"sku\": \"CAF-DES-250\",\n      \"product_id\": 105,\n      \"nombre\": \"Café descafeinado 250 g\",\n      \"stock\": 9,\n      \"minimo\": 3\n    },\n    {\n      \"sku\": \"PRE-V60\",\n      \"product_id\": 201,\n      \"nombre\": \"Gotero V60 de cerámica\",\n      \"stock\": 5,\n      \"minimo\": 2\n    },\n    {\n      \"sku\": \"PRE-PRENSA\",\n      \"product_id\": 202,\n      \"nombre\": \"Prensa francesa 600 ml\",\n      \"stock\": 8,\n      \"minimo\": 2\n    },\n    {\n      \"sku\": \"ACC-FILTROS\",\n      \"product_id\": 301,\n      \"nombre\": \"Filtros de papel x100\",\n      \"stock\": 30,\n      \"minimo\": 10\n    },\n    {\n      \"sku\": \"ACC-TAZA\",\n      \"product_id\": 302,\n      \"nombre\": \"Taza de cerámica artesanal\",\n      \"stock\": 3,\n      \"minimo\": 2\n    },\n    {\n      \"sku\": \"KIT-REGALO\",\n      \"product_id\": 401,\n      \"nombre\": \"Kit regalo café + taza\",\n      \"stock\": 4,\n      \"minimo\": 2\n    }\n  ]\n};\n\nconst DESCUENTAN = ['processing', 'completed'];\nconst DEVUELVEN = ['cancelled', 'refunded', 'failed'];\n\n// ── utilidades ──\n\nfunction entero(v) {\n  if (typeof v === 'number') return Number.isInteger(v) ? v : 0;\n  if (typeof v === 'string' && /^-?\\d+$/.test(v.trim())) return parseInt(v.trim(), 10);\n  return 0;\n}\n\nfunction inventarioDesdeFilas(filas) {\n  const inventario = {};\n  for (const f of filas) {\n    const sku = String(f.sku || '').trim();\n    if (sku) {\n      inventario[sku] = {\n        sku, nombre: String(f.nombre || sku),\n        stock: entero(f.stock), minimo: entero(f.minimo),\n        product_id: entero(f.product_id),\n      };\n    }\n  }\n  return inventario;\n}\n\nfunction alerta(tipo, producto, pedido) {\n  const { nombre: n, sku: s, stock } = producto;\n  const mensajes = {\n    sobreventa: `Sobreventa: ${n} (${s}) quedó en ${stock}. El pedido #${pedido} ` +\n      'vendió más de lo que había: revisar si se puede atender.',\n    agotado: `Agotado: ${n} (${s}) con el pedido #${pedido}.`,\n    stock_bajo: `Stock bajo: ${n} (${s}) quedan ${stock} (mínimo ${producto.minimo}).`,\n  };\n  return { tipo, sku: s, stock, mensaje: mensajes[tipo] };\n}\n\n// ── decisión ──\n\nfunction procesarEvento(cuerpo, firmaOk, estado, fecha) {\n  estado.pedidos = estado.pedidos || {};\n  const pedidos = estado.pedidos;\n  const inventario = estado.inventario;\n  const r = {\n    accion: 'ignorado', http: 200, pedido_id: '', estado_pedido: '',\n    motivo: '', movimientos: [], alertas: [], actualizar_tienda: [], fecha,\n  };\n\n  if (!firmaOk) return Object.assign(r, { accion: 'rechazado', http: 401, motivo: 'firma inválida' });\n\n  let pedido = null;\n  try { pedido = JSON.parse(cuerpo); } catch (e) { pedido = null; }\n  if (!pedido || typeof pedido !== 'object' || Array.isArray(pedido) || !pedido.id) {\n    // WooCommerce manda un aviso de prueba (\"webhook_id=12\") al crear el webhook\n    r.motivo = 'aviso sin pedido (prueba de WooCommerce)';\n    return r;\n  }\n\n  const pid = String(pedido.id);\n  const status = String(pedido.status || '');\n  const previo = pedidos[pid];\n  Object.assign(r, { pedido_id: pid, estado_pedido: status, fecha: String(pedido.date_modified || fecha) });\n\n  let signo, accion;\n  if (DESCUENTAN.includes(status)) {\n    if (previo === 'descontado') { r.motivo = 'el pedido ya descontó stock'; return r; }\n    [signo, accion] = [-1, 'descontar'];\n  } else if (DEVUELVEN.includes(status)) {\n    if (previo !== 'descontado') { r.motivo = 'el pedido no había descontado stock'; return r; }\n    [signo, accion] = [1, 'devolver'];\n  } else {\n    r.motivo = `el estado «${status}» no mueve stock`;\n    return r;\n  }\n\n  r.accion = accion;\n  const tocados = [];\n  for (const linea of pedido.line_items || []) {\n    const sku = String(linea.sku || '').trim();\n    const cantidad = entero(linea.quantity);\n    if (cantidad <= 0) continue;\n    if (!(sku in inventario)) {\n      r.alertas.push({\n        tipo: 'sku_desconocido', sku, stock: 0,\n        mensaje: `El pedido #${pid} trae ` +\n          (sku ? `el SKU «${sku}», que no está` : 'un producto sin SKU, que no está') +\n          ` en el inventario: «${linea.name || ''}» x${cantidad}.`,\n      });\n      continue;\n    }\n    const p = inventario[sku];\n    const antes = p.stock;\n    p.stock = antes + signo * cantidad;\n    r.movimientos.push({\n      sku, nombre: p.nombre, cantidad: signo * cantidad,\n      stock_antes: antes, stock_despues: p.stock,\n    });\n    if (!tocados.includes(sku)) tocados.push(sku);\n    if (signo < 0) {\n      if (p.stock < 0) r.alertas.push(alerta('sobreventa', p, pid));\n      else if (p.stock === 0) r.alertas.push(alerta('agotado', p, pid));\n      else if (antes >= p.minimo && p.minimo > p.stock) r.alertas.push(alerta('stock_bajo', p, pid));\n    }\n  }\n\n  pedidos[pid] = accion === 'descontar' ? 'descontado' : 'devuelto';\n  r.actualizar_tienda = tocados.map((s) => ({\n    sku: s, product_id: inventario[s].product_id, stock: inventario[s].stock,\n  }));\n  return r;\n}\n\n// ── Ejecución en n8n ──\n// (todo lo de arriba se reutiliza tal cual en demo/motor.js)\n\nconst crypto = require('crypto');\n\nfunction firmaValida(cuerpo, recibida) {\n  if (!SECRETO || !recibida) return false;\n  const esperada = Buffer.from(crypto.createHmac('sha256', SECRETO).update(cuerpo, 'utf8').digest('base64'));\n  const dada = Buffer.from(String(recibida));\n  // timingSafeEqual tarda lo mismo acierte o no: no da pistas a un atacante\n  return esperada.length === dada.length && crypto.timingSafeEqual(esperada, dada);\n}\n\nfunction leerEstado() {\n  if (REGISTRO === 'sheets') {\n    const pedidos = {};\n    for (const i of $('Sheets · Leer pedidos').all()) {\n      if (i.json.pedido_id) pedidos[String(i.json.pedido_id)] = String(i.json.estado_stock);\n    }\n    return {\n      inventario: inventarioDesdeFilas($('Sheets · Leer inventario').all().map((i) => i.json)),\n      pedidos,\n    };\n  }\n  const memoria = $getWorkflowStaticData('global');\n  if (!memoria.inventario) memoria.inventario = inventarioDesdeFilas(INVENTARIO_INICIAL.productos);\n  return memoria;\n}\n\nconst estado = leerEstado();\nconst webhooks = $('Webhook · Pedido de WooCommerce').all();\n// El cuerpo exacto hace falta para la firma: si se volviera a serializar el\n// JSON, un espacio distinto cambiaría la firma. El nodo \"Leer cuerpo exacto\"\n// lo deja como texto; se lee por nombre porque en producción $input trae las\n// filas de la hoja, no el aviso.\nconst cuerpos = $('Leer cuerpo exacto').all();\n\nreturn cuerpos.map((item, i) => {\n  const cuerpo = String(item.json.cuerpo || '');\n  const cabeceras = (webhooks[i] && webhooks[i].json.headers) || {};\n  const firmaOk = firmaValida(cuerpo, cabeceras['x-wc-webhook-signature']);\n  return { json: procesarEvento(cuerpo, firmaOk, estado, $now.toISO()) };\n});\n"
+      },
+      "id": "code-1",
+      "name": "Aplicar pedido al stock",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ],
+      "notes": "Necesita en el servidor de n8n: WC_WEBHOOK_SECRET, NODE_FUNCTION_ALLOW_BUILTIN=crypto y N8N_BLOCK_ENV_ACCESS_IN_NODE=false (ver GUIA.md)."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { accion: $json.accion, motivo: $json.motivo } }}",
+        "options": {
+          "responseCode": "={{ $json.http }}"
+        }
+      },
+      "id": "resp-1",
+      "name": "Responder a WooCommerce",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        100
+      ],
+      "notes": "Se responde enseguida: WooCommerce desactiva el webhook tras varios avisos sin respuesta."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "m1",
+              "leftValue": "={{ $json.accion }}",
+              "rightValue": "descontar",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "m2",
+              "leftValue": "={{ $json.accion }}",
+              "rightValue": "devolver",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "if-1",
+      "name": "¿Movió stock?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_ID_HOJA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Pedidos",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "pedido_id": "={{ $json.pedido_id }}",
+            "estado_stock": "={{ $json.accion === 'descontar' ? 'descontado' : 'devuelto' }}",
+            "actualizado": "={{ $json.fecha }}"
+          },
+          "matchingColumns": [
+            "pedido_id"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "gs-ped-w",
+      "name": "Sheets · Guardar estado del pedido",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1340,
+        60
+      ],
+      "notes": "Es la memoria de idempotencia: un pedido ya descontado no vuelve a descontar."
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "movimientos",
+        "include": "selectedOtherFields",
+        "fieldsToInclude": "pedido_id, accion, fecha",
+        "options": {}
+      },
+      "id": "sp-mov",
+      "name": "Separar movimientos",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_ID_HOJA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Kardex",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {}
+        },
+        "options": {}
+      },
+      "id": "gs-kardex",
+      "name": "Sheets · Kardex",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1560,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "actualizar_tienda",
+        "include": "selectedOtherFields",
+        "fieldsToInclude": "pedido_id, accion, fecha",
+        "options": {}
+      },
+      "id": "sp-act",
+      "name": "Separar productos a actualizar",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "REEMPLAZAR_ID_HOJA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Inventario",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sku": "={{ $json.sku }}",
+            "stock": "={{ $json.stock }}"
+          },
+          "matchingColumns": [
+            "sku"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "gs-inv-w",
+      "name": "Sheets · Actualizar inventario",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1560,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=REEMPLAZAR_URL_TIENDA/wp-json/wc/v3/products/{{ $json.product_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { manage_stock: true, stock_quantity: $json.stock } }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "http-wc",
+      "name": "WooCommerce · Actualizar stock",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        540
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueErrorOutput",
+      "notes": "La hoja es la fuente de verdad (también descuenta ventas de la tienda física); aquí se copia el stock a la tienda online."
+    },
+    {
+      "parameters": {
+        "chatId": "REEMPLAZAR_CHAT_EQUIPO",
+        "text": "=No se pudo actualizar el stock de {{ $('Separar productos a actualizar').item.json.sku }} en la tienda online tras 3 intentos. Stock correcto: {{ $('Separar productos a actualizar').item.json.stock }}.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "tg-wc",
+      "name": "Telegram · Falló la tienda",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1780,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "alertas",
+        "include": "selectedOtherFields",
+        "fieldsToInclude": "pedido_id, accion, fecha",
+        "options": {}
+      },
+      "id": "sp-al",
+      "name": "Separar alertas",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1100,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "REEMPLAZAR_CHAT_EQUIPO",
+        "text": "={{ $json.mensaje }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "tg-al",
+      "name": "Telegram · Alerta de stock",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1340,
+        580
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook · Pedido de WooCommerce": {
+      "main": [
+        [
+          {
+            "node": "Leer cuerpo exacto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer cuerpo exacto": {
+      "main": [
+        [
+          {
+            "node": "Sheets · Leer inventario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets · Leer inventario": {
+      "main": [
+        [
+          {
+            "node": "Sheets · Leer pedidos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sheets · Leer pedidos": {
+      "main": [
+        [
+          {
+            "node": "Aplicar pedido al stock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aplicar pedido al stock": {
+      "main": [
+        [
+          {
+            "node": "Responder a WooCommerce",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Movió stock?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Separar alertas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Movió stock?": {
+      "main": [
+        [
+          {
+            "node": "Sheets · Guardar estado del pedido",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Separar movimientos",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Separar productos a actualizar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Separar movimientos": {
+      "main": [
+        [
+          {
+            "node": "Sheets · Kardex",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar productos a actualizar": {
+      "main": [
+        [
+          {
+            "node": "Sheets · Actualizar inventario",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "WooCommerce · Actualizar stock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WooCommerce · Actualizar stock": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Telegram · Falló la tienda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar alertas": {
+      "main": [
+        [
+          {
+            "node": "Telegram · Alerta de stock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "tienda-prod"
+  },
+  "tags": []
+}
