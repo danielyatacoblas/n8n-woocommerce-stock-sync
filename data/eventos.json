@@ -1,0 +1,121 @@
+[
+  {
+    "descripcion": "WooCommerce prueba el webhook al crearlo",
+    "tipo_contenido": "application/x-www-form-urlencoded",
+    "cuerpo": "webhook_id=7",
+    "firma": "zb6i4LqT0slAX/kTozoGtKwdrd4Qr73dQUjGTrET46g=",
+    "esperado": "ignorado"
+  },
+  {
+    "descripcion": "#1001 creado, todavía sin pagar",
+    "tipo_contenido": "application/json",
+    "cuerpo": "{\"id\": 1001, \"number\": \"1001\", \"status\": \"pending\", \"currency\": \"PEN\", \"date_modified\": \"2026-09-10T09:00:00\", \"billing\": {\"first_name\": \"Cliente\", \"last_name\": \"Demo 1001\"}, \"line_items\": [{\"id\": 10010, \"name\": \"CAF-VRS-250\", \"sku\": \"CAF-VRS-250\", \"quantity\": 2}, {\"id\": 10011, \"name\": \"PRE-V60\", \"sku\": \"PRE-V60\", \"quantity\": 1}]}",
+    "firma": "D54HOpeeTa7ewg7bRVSDa6Mi5BaQaaaYXZDgqiwZCfk=",
+    "esperado": "ignorado"
+  },
+  {
+    "descripcion": "#1001 pagado",
+    "tipo_contenido": "application/json",
+    "cuerpo": "{\"id\": 1001, \"number\": \"1001\", \"status\": \"processing\", \"currency\": \"PEN\", \"date_modified\": \"2026-09-10T09:05:00\", \"billing\": {\"first_name\": \"Cliente\", \"last_name\": \"Demo 1001\"}, \"line_items\": [{\"id\": 10010, \"name\": \"CAF-VRS-250\", \"sku\": \"CAF-VRS-250\", \"quantity\": 2}, {\"id\": 10011, \"name\": \"PRE-V60\", \"sku\": \"PRE-V60\", \"quantity\": 1}]}",
+    "firma": "jwhmWTTByaeO8UjdEu2LtTqreRkDZfojTwzt9YdqI/w=",
+    "esperado": "descontar"
+  },
+  {
+    "descripcion": "#1001 reintento del mismo aviso (WooCommerce no recibió respuesta)",
+    "tipo_contenido": "application/json",
+    "cuerpo": "{\"id\": 1001, \"number\": \"1001\", \"status\": \"processing\", \"currency\": \"PEN\", \"date_modified\": \"2026-09-10T09:05:00\", \"billing\": {\"first_name\": \"Cliente\", \"last_name\": \"Demo 1001\"}, \"line_items\": [{\"id\": 10010, \"name\": \"CAF-VRS-250\", \"sku\": \"CAF-VRS-250\", \"quantity\": 2}, {\"id\": 10011, \"name\": \"PRE-V60\", \"sku\": \"PRE-V60\", \"quantity\": 1}]}",
+    "firma": "jwhmWTTByaeO8UjdEu2LtTqreRkDZfojTwzt9YdqI/w=",
+    "esperado": "ignorado"
+  },
+  {
+    "descripcion": "#1002 pagado: el geisha baja del mínimo",
+    "tipo_contenido": "application/json",
+    "cuerpo": "{\"id\": 1002, \"number\": \"1002\", \"status\": \"processing\", \"currency\": \"PEN\", \"date_modified\": \"2026-09-10T09:40:00\", \"billing\": {\"first_name\": \"Cliente\", \"last_name\": \"Demo 1002\"}, \"line_items\": [{\"id\": 10020, \"name\": \"CAF-CUS-250\", \"sku\": \"CAF-CUS-250\", \"quantity\": 4}]}",
+    "firma": "dNKA3TFcXudsuMElymgdd+7NG0KfKZJvFHL/hXHERs8=",
+    "esperado": "descontar"
+  },
+  {
+    "descripcion": "#1003 pagado: se venden las 3 últimas tazas",
+    "tipo_contenido": "application/json",
+    "cuerpo": "{\"id\": 1003, \"number\": \"1003\", \"status\": \"processing\", \"currency\": \"PEN\", \"date_modified\": \"2026-09-10T10:15:00\", \"billing\": {\"first_name\": \"Cliente\", \"last_name\": \"Demo 1003\"}, \"line_items\": [{\"id\": 10030, \"name\": \"ACC-TAZA\", \"sku\": \"ACC-TAZA\", \"quantity\": 3}]}",
+    "firma": "fptS/d7HDQWfRt4SHFgK//kc8HEm7XrGsCz7Eq69BWA=",
+    "esperado": "descontar"
+  },
+  {
+    "descripcion": "#1004 pagado: una taza más de las que había",
+    "tipo_contenido": "application/json",
+    "cuerpo": "{\"id\": 1004, \"number\": \"1004\", \"status\": \"processing\", \"currency\": \"PEN\", \"date_modified\": \"2026-09-10T10:20:00\", \"billing\": {\"first_name\": \"Cliente\", \"last_name\": \"Demo 1004\"}, \"line_items\": [{\"id\": 10040, \"name\": \"ACC-TAZA\", \"sku\": \"ACC-TAZA\", \"quantity\": 1}]}",
+    "firma": "UX23wv09KIa5Nd+kHopYlwSWu+Tr5V7++Lwl6xDGNUE=",
+    "esperado": "descontar"
+  },
+  {
+    "descripcion": "#1004 cancelado: la taza vuelve al stock",
+    "tipo_contenido": "application/json",
+    "cuerpo": "{\"id\": 1004, \"number\": \"1004\", \"status\": \"cancelled\", \"currency\": \"PEN\", \"date_modified\": \"2026-09-10T10:45:00\", \"billing\": {\"first_name\": \"Cliente\", \"last_name\": \"Demo 1004\"}, \"line_items\": [{\"id\": 10040, \"name\": \"ACC-TAZA\", \"sku\": \"ACC-TAZA\", \"quantity\": 1}]}",
+    "firma": "0gzjeBaZXCRsnzNS+lOnlZI+bSQN/D6tAOHhEQSzCnM=",
+    "esperado": "devolver"
+  },
+  {
+    "descripcion": "#1005 cancelado sin haber pagado nunca",
+    "tipo_contenido": "application/json",
+    "cuerpo": "{\"id\": 1005, \"number\": \"1005\", \"status\": \"cancelled\", \"currency\": \"PEN\", \"date_modified\": \"2026-09-10T11:00:00\", \"billing\": {\"first_name\": \"Cliente\", \"last_name\": \"Demo 1005\"}, \"line_items\": [{\"id\": 10050, \"name\": \"CAF-DES-250\", \"sku\": \"CAF-DES-250\", \"quantity\": 2}]}",
+    "firma": "wYqAlFlj8mX+IW8/0Gu9h0D7SW7qK+ilycigWqi0HWM=",
+    "esperado": "ignorado"
+  },
+  {
+    "descripcion": "#1006 pagado con un SKU que no existe y un producto sin SKU",
+    "tipo_contenido": "application/json",
+    "cuerpo": "{\"id\": 1006, \"number\": \"1006\", \"status\": \"processing\", \"currency\": \"PEN\", \"date_modified\": \"2026-09-10T11:30:00\", \"billing\": {\"first_name\": \"Cliente\", \"last_name\": \"Demo 1006\"}, \"line_items\": [{\"id\": 10060, \"name\": \"CAF-CHA-250\", \"sku\": \"CAF-CHA-250\", \"quantity\": 2}, {\"id\": 10061, \"name\": \"CAF-XYZ\", \"sku\": \"CAF-XYZ\", \"quantity\": 1}, {\"id\": 10062, \"name\": \"Producto sin SKU\", \"sku\": \"\", \"quantity\": 1}]}",
+    "firma": "fkYSx0H0oPO7BiH3zHcCp23On5W0/jDCKZMMZp1G92w=",
+    "esperado": "descontar"
+  },
+  {
+    "descripcion": "#1007 falso: alguien descubrió la URL del webhook",
+    "tipo_contenido": "application/json",
+    "cuerpo": "{\"id\": 1007, \"number\": \"1007\", \"status\": \"processing\", \"currency\": \"PEN\", \"date_modified\": \"2026-09-10T12:00:00\", \"billing\": {\"first_name\": \"Cliente\", \"last_name\": \"Demo 1007\"}, \"line_items\": [{\"id\": 10070, \"name\": \"CAF-VRS-1K\", \"sku\": \"CAF-VRS-1K\", \"quantity\": 10}]}",
+    "firma": "Zm9ybWFmYWxzYQ==",
+    "esperado": "rechazado"
+  },
+  {
+    "descripcion": "#1001 entregado: no vuelve a descontar",
+    "tipo_contenido": "application/json",
+    "cuerpo": "{\"id\": 1001, \"number\": \"1001\", \"status\": \"completed\", \"currency\": \"PEN\", \"date_modified\": \"2026-09-10T15:00:00\", \"billing\": {\"first_name\": \"Cliente\", \"last_name\": \"Demo 1001\"}, \"line_items\": [{\"id\": 10010, \"name\": \"CAF-VRS-250\", \"sku\": \"CAF-VRS-250\", \"quantity\": 2}, {\"id\": 10011, \"name\": \"PRE-V60\", \"sku\": \"PRE-V60\", \"quantity\": 1}]}",
+    "firma": "ANg5kisNI3EARiSGlR+ALSF4ThL3JWt4JJxieZjf0/M=",
+    "esperado": "ignorado"
+  },
+  {
+    "descripcion": "#1003 reembolsado: vuelven las 3 tazas",
+    "tipo_contenido": "application/json",
+    "cuerpo": "{\"id\": 1003, \"number\": \"1003\", \"status\": \"refunded\", \"currency\": \"PEN\", \"date_modified\": \"2026-09-10T16:00:00\", \"billing\": {\"first_name\": \"Cliente\", \"last_name\": \"Demo 1003\"}, \"line_items\": [{\"id\": 10030, \"name\": \"ACC-TAZA\", \"sku\": \"ACC-TAZA\", \"quantity\": 3}]}",
+    "firma": "HdTa9My6pNIYPQD315vpY8kMx5Wxw7UqvphI4zm8ci4=",
+    "esperado": "devolver"
+  },
+  {
+    "descripcion": "#1008 en espera de transferencia",
+    "tipo_contenido": "application/json",
+    "cuerpo": "{\"id\": 1008, \"number\": \"1008\", \"status\": \"on-hold\", \"currency\": \"PEN\", \"date_modified\": \"2026-09-10T16:30:00\", \"billing\": {\"first_name\": \"Cliente\", \"last_name\": \"Demo 1008\"}, \"line_items\": [{\"id\": 10080, \"name\": \"PRE-PRENSA\", \"sku\": \"PRE-PRENSA\", \"quantity\": 1}]}",
+    "firma": "XWo4FTQjTAcbZiqWXEfWznFnmReOO0tJD4J9F3oP1us=",
+    "esperado": "ignorado"
+  },
+  {
+    "descripcion": "#1009 pagado: 5 kits cuando quedan 4",
+    "tipo_contenido": "application/json",
+    "cuerpo": "{\"id\": 1009, \"number\": \"1009\", \"status\": \"processing\", \"currency\": \"PEN\", \"date_modified\": \"2026-09-10T17:00:00\", \"billing\": {\"first_name\": \"Cliente\", \"last_name\": \"Demo 1009\"}, \"line_items\": [{\"id\": 10090, \"name\": \"KIT-REGALO\", \"sku\": \"KIT-REGALO\", \"quantity\": 5}]}",
+    "firma": "AnGsTe3Pd5e5RWDUcLD/xlF4HK2ZOJDVev6vXlKxEfg=",
+    "esperado": "descontar"
+  },
+  {
+    "descripcion": "#1002 reenviado con otro formato de JSON (misma información)",
+    "tipo_contenido": "application/json",
+    "cuerpo": "{\n \"id\": 1002,\n \"number\": \"1002\",\n \"status\": \"processing\",\n \"currency\": \"PEN\",\n \"date_modified\": \"2026-09-10T09:40:00\",\n \"billing\": {\n  \"first_name\": \"Cliente\",\n  \"last_name\": \"Demo 1002\"\n },\n \"line_items\": [\n  {\n   \"id\": 10020,\n   \"name\": \"CAF-CUS-250\",\n   \"sku\": \"CAF-CUS-250\",\n   \"quantity\": 4\n  }\n ]\n}",
+    "firma": "9AZdlrHRIYJ5D4WDc/QMoOHwAD7O34S+af/16Td450k=",
+    "esperado": "ignorado"
+  },
+  {
+    "descripcion": "#1010 alterado después de firmar: cambiaron la cantidad",
+    "tipo_contenido": "application/json",
+    "cuerpo": "{\"id\": 1010, \"number\": \"1010\", \"status\": \"processing\", \"currency\": \"PEN\", \"date_modified\": \"2026-09-10T18:00:00\", \"billing\": {\"first_name\": \"Cliente\", \"last_name\": \"Demo 1010\"}, \"line_items\": [{\"id\": 10100, \"name\": \"CAF-VRS-1K\", \"sku\": \"CAF-VRS-1K\", \"quantity\": 50}]}",
+    "firma": "OSes+D0x1G6O8999S9GFNtfIFsmGHxrgVCSW8JW48J4=",
+    "esperado": "rechazado"
+  }
+]

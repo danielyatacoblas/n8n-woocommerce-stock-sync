@@ -1,0 +1,16 @@
+{
+  "tienda": "Tostaduría Selva Alta",
+  "nota": "Tienda ficticia. Productos, precios y stock inventados para la demostración.",
+  "productos": [
+    {"sku": "CAF-VRS-250", "product_id": 101, "nombre": "Café Villa Rica tostado 250 g", "stock": 40, "minimo": 10},
+    {"sku": "CAF-VRS-1K", "product_id": 102, "nombre": "Café Villa Rica tostado 1 kg", "stock": 12, "minimo": 4},
+    {"sku": "CAF-CHA-250", "product_id": 103, "nombre": "Café Chanchamayo orgánico 250 g", "stock": 25, "minimo": 8},
+    {"sku": "CAF-CUS-250", "product_id": 104, "nombre": "Café Cusco geisha 250 g", "stock": 6, "minimo": 3},
+    {"sku": "CAF-DES-250", "product_id": 105, "nombre": "Café descafeinado 250 g", "stock": 9, "minimo": 3},
+    {"sku": "PRE-V60", "product_id": 201, "nombre": "Gotero V60 de cerámica", "stock": 5, "minimo": 2},
+    {"sku": "PRE-PRENSA", "product_id": 202, "nombre": "Prensa francesa 600 ml", "stock": 8, "minimo": 2},
+    {"sku": "ACC-FILTROS", "product_id": 301, "nombre": "Filtros de papel x100", "stock": 30, "minimo": 10},
+    {"sku": "ACC-TAZA", "product_id": 302, "nombre": "Taza de cerámica artesanal", "stock": 3, "minimo": 2},
+    {"sku": "KIT-REGALO", "product_id": 401, "nombre": "Kit regalo café + taza", "stock": 4, "minimo": 2}
+  ]
+}

@@ -1,0 +1,35 @@
+# n8n self-hosted para desarrollo local.
+#
+#   docker compose up -d       → http://localhost:5678
+#   docker compose logs -f     → ver ejecuciones en vivo
+#   docker compose down        → apagar (los datos quedan en el volumen)
+#
+# En producción define WC_WEBHOOK_SECRET en el entorno (o en un archivo .env
+# que NO se sube al repositorio) con la clave que muestra WooCommerce al
+# crear el webhook.
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: tienda_n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - GENERIC_TIMEZONE=America/Lima
+      - TZ=America/Lima
+      - WEBHOOK_URL=http://localhost:5678/
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_RUNNERS_ENABLED=true
+      # El nodo Code usa el módulo crypto de Node para verificar la firma
+      - NODE_FUNCTION_ALLOW_BUILTIN=crypto
+      # El workflow de producción lee la clave con $env.WC_WEBHOOK_SECRET
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - WC_WEBHOOK_SECRET=${WC_WEBHOOK_SECRET:-clave-demo-no-usar-en-produccion}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/workflows
+
+volumes:
+  n8n_data:
