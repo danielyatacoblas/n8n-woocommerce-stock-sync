@@ -1,0 +1,256 @@
+{
+  "id": "tiendademo",
+  "name": "Sincronización de tienda · DEMO sin credenciales",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tienda-demo",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*",
+          "rawBody": true
+        }
+      },
+      "id": "wh-1",
+      "name": "Webhook · Pedido de WooCommerce",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "tienda-demo"
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "binaryPropertyName": "data",
+        "destinationKey": "cuerpo",
+        "options": {}
+      },
+      "id": "raw-1",
+      "name": "Leer cuerpo exacto",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        220,
+        0
+      ],
+      "notes": "Guarda el cuerpo tal como llegó: la firma se calcula sobre esos bytes."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Nodo Code de n8n: \"Aplicar pedido al stock\"\n// Espejo en JavaScript de src/sync_tienda.py (misma lógica, misma salida).\n// La paridad entre ambos la verifica tests/test_paridad_js.py.\n//\n// scripts/build_workflow.py reemplaza los marcadores:\n//   REGISTRO  'memoria' (demo, stock en la memoria del workflow)\n//             'sheets'  (producción, stock y pedidos en Google Sheets)\n//   SECRETO   la clave con la que WooCommerce firma los avisos\n//   INVENTARIO_INICIAL  data/inventario.json (solo lo usa la demo)\n\nconst REGISTRO = 'memoria';\nconst SECRETO = \"clave-demo-no-usar-en-produccion\";\nconst INVENTARIO_INICIAL = {\n  \"tienda\": \"Tostaduría Selva Alta\",\n  \"nota\": \"Tienda ficticia. Productos, precios y stock inventados para la demostración.\",\n  \"productos\": [\n    {\n      \"sku\": \"CAF-VRS-250\",\n      \"product_id\": 101,\n      \"nombre\": \"Café Villa Rica tostado 250 g\",\n      \"stock\": 40,\n      \"minimo\": 10\n    },\n    {\n      \"sku\": \"CAF-VRS-1K\",\n      \"product_id\": 102,\n      \"nombre\": \"Café Villa Rica tostado 1 kg\",\n      \"stock\": 12,\n      \"minimo\": 4\n    },\n    {\n      \"sku\": \"CAF-CHA-250\",\n      \"product_id\": 103,\n      \"nombre\": \"Café Chanchamayo orgánico 250 g\",\n      \"stock\": 25,\n      \"minimo\": 8\n    },\n    {\n      \"sku\": \"CAF-CUS-250\",\n      \"product_id\": 104,\n      \"nombre\": \"Café Cusco geisha 250 g\",\n      \"stock\": 6,\n      \"minimo\": 3\n    },\n    {\n      \"sku\": \"CAF-DES-250\",\n      \"product_id\": 105,\n      \"nombre\": \"Café descafeinado 250 g\",\n      \"stock\": 9,\n      \"minimo\": 3\n    },\n    {\n      \"sku\": \"PRE-V60\",\n      \"product_id\": 201,\n      \"nombre\": \"Gotero V60 de cerámica\",\n      \"stock\": 5,\n      \"minimo\": 2\n    },\n    {\n      \"sku\": \"PRE-PRENSA\",\n      \"product_id\": 202,\n      \"nombre\": \"Prensa francesa 600 ml\",\n      \"stock\": 8,\n      \"minimo\": 2\n    },\n    {\n      \"sku\": \"ACC-FILTROS\",\n      \"product_id\": 301,\n      \"nombre\": \"Filtros de papel x100\",\n      \"stock\": 30,\n      \"minimo\": 10\n    },\n    {\n      \"sku\": \"ACC-TAZA\",\n      \"product_id\": 302,\n      \"nombre\": \"Taza de cerámica artesanal\",\n      \"stock\": 3,\n      \"minimo\": 2\n    },\n    {\n      \"sku\": \"KIT-REGALO\",\n      \"product_id\": 401,\n      \"nombre\": \"Kit regalo café + taza\",\n      \"stock\": 4,\n      \"minimo\": 2\n    }\n  ]\n};\n\nconst DESCUENTAN = ['processing', 'completed'];\nconst DEVUELVEN = ['cancelled', 'refunded', 'failed'];\n\n// ── utilidades ──\n\nfunction entero(v) {\n  if (typeof v === 'number') return Number.isInteger(v) ? v : 0;\n  if (typeof v === 'string' && /^-?\\d+$/.test(v.trim())) return parseInt(v.trim(), 10);\n  return 0;\n}\n\nfunction inventarioDesdeFilas(filas) {\n  const inventario = {};\n  for (const f of filas) {\n    const sku = String(f.sku || '').trim();\n    if (sku) {\n      inventario[sku] = {\n        sku, nombre: String(f.nombre || sku),\n        stock: entero(f.stock), minimo: entero(f.minimo),\n        product_id: entero(f.product_id),\n      };\n    }\n  }\n  return inventario;\n}\n\nfunction alerta(tipo, producto, pedido) {\n  const { nombre: n, sku: s, stock } = producto;\n  const mensajes = {\n    sobreventa: `Sobreventa: ${n} (${s}) quedó en ${stock}. El pedido #${pedido} ` +\n      'vendió más de lo que había: revisar si se puede atender.',\n    agotado: `Agotado: ${n} (${s}) con el pedido #${pedido}.`,\n    stock_bajo: `Stock bajo: ${n} (${s}) quedan ${stock} (mínimo ${producto.minimo}).`,\n  };\n  return { tipo, sku: s, stock, mensaje: mensajes[tipo] };\n}\n\n// ── decisión ──\n\nfunction procesarEvento(cuerpo, firmaOk, estado, fecha) {\n  estado.pedidos = estado.pedidos || {};\n  const pedidos = estado.pedidos;\n  const inventario = estado.inventario;\n  const r = {\n    accion: 'ignorado', http: 200, pedido_id: '', estado_pedido: '',\n    motivo: '', movimientos: [], alertas: [], actualizar_tienda: [], fecha,\n  };\n\n  if (!firmaOk) return Object.assign(r, { accion: 'rechazado', http: 401, motivo: 'firma inválida' });\n\n  let pedido = null;\n  try { pedido = JSON.parse(cuerpo); } catch (e) { pedido = null; }\n  if (!pedido || typeof pedido !== 'object' || Array.isArray(pedido) || !pedido.id) {\n    // WooCommerce manda un aviso de prueba (\"webhook_id=12\") al crear el webhook\n    r.motivo = 'aviso sin pedido (prueba de WooCommerce)';\n    return r;\n  }\n\n  const pid = String(pedido.id);\n  const status = String(pedido.status || '');\n  const previo = pedidos[pid];\n  Object.assign(r, { pedido_id: pid, estado_pedido: status, fecha: String(pedido.date_modified || fecha) });\n\n  let signo, accion;\n  if (DESCUENTAN.includes(status)) {\n    if (previo === 'descontado') { r.motivo = 'el pedido ya descontó stock'; return r; }\n    [signo, accion] = [-1, 'descontar'];\n  } else if (DEVUELVEN.includes(status)) {\n    if (previo !== 'descontado') { r.motivo = 'el pedido no había descontado stock'; return r; }\n    [signo, accion] = [1, 'devolver'];\n  } else {\n    r.motivo = `el estado «${status}» no mueve stock`;\n    return r;\n  }\n\n  r.accion = accion;\n  const tocados = [];\n  for (const linea of pedido.line_items || []) {\n    const sku = String(linea.sku || '').trim();\n    const cantidad = entero(linea.quantity);\n    if (cantidad <= 0) continue;\n    if (!(sku in inventario)) {\n      r.alertas.push({\n        tipo: 'sku_desconocido', sku, stock: 0,\n        mensaje: `El pedido #${pid} trae ` +\n          (sku ? `el SKU «${sku}», que no está` : 'un producto sin SKU, que no está') +\n          ` en el inventario: «${linea.name || ''}» x${cantidad}.`,\n      });\n      continue;\n    }\n    const p = inventario[sku];\n    const antes = p.stock;\n    p.stock = antes + signo * cantidad;\n    r.movimientos.push({\n      sku, nombre: p.nombre, cantidad: signo * cantidad,\n      stock_antes: antes, stock_despues: p.stock,\n    });\n    if (!tocados.includes(sku)) tocados.push(sku);\n    if (signo < 0) {\n      if (p.stock < 0) r.alertas.push(alerta('sobreventa', p, pid));\n      else if (p.stock === 0) r.alertas.push(alerta('agotado', p, pid));\n      else if (antes >= p.minimo && p.minimo > p.stock) r.alertas.push(alerta('stock_bajo', p, pid));\n    }\n  }\n\n  pedidos[pid] = accion === 'descontar' ? 'descontado' : 'devuelto';\n  r.actualizar_tienda = tocados.map((s) => ({\n    sku: s, product_id: inventario[s].product_id, stock: inventario[s].stock,\n  }));\n  return r;\n}\n\n// ── Ejecución en n8n ──\n// (todo lo de arriba se reutiliza tal cual en demo/motor.js)\n\nconst crypto = require('crypto');\n\nfunction firmaValida(cuerpo, recibida) {\n  if (!SECRETO || !recibida) return false;\n  const esperada = Buffer.from(crypto.createHmac('sha256', SECRETO).update(cuerpo, 'utf8').digest('base64'));\n  const dada = Buffer.from(String(recibida));\n  // timingSafeEqual tarda lo mismo acierte o no: no da pistas a un atacante\n  return esperada.length === dada.length && crypto.timingSafeEqual(esperada, dada);\n}\n\nfunction leerEstado() {\n  if (REGISTRO === 'sheets') {\n    const pedidos = {};\n    for (const i of $('Sheets · Leer pedidos').all()) {\n      if (i.json.pedido_id) pedidos[String(i.json.pedido_id)] = String(i.json.estado_stock);\n    }\n    return {\n      inventario: inventarioDesdeFilas($('Sheets · Leer inventario').all().map((i) => i.json)),\n      pedidos,\n    };\n  }\n  const memoria = $getWorkflowStaticData('global');\n  if (!memoria.inventario) memoria.inventario = inventarioDesdeFilas(INVENTARIO_INICIAL.productos);\n  return memoria;\n}\n\nconst estado = leerEstado();\nconst webhooks = $('Webhook · Pedido de WooCommerce').all();\n// El cuerpo exacto hace falta para la firma: si se volviera a serializar el\n// JSON, un espacio distinto cambiaría la firma. El nodo \"Leer cuerpo exacto\"\n// lo deja como texto; se lee por nombre porque en producción $input trae las\n// filas de la hoja, no el aviso.\nconst cuerpos = $('Leer cuerpo exacto').all();\n\nreturn cuerpos.map((item, i) => {\n  const cuerpo = String(item.json.cuerpo || '');\n  const cabeceras = (webhooks[i] && webhooks[i].json.headers) || {};\n  const firmaOk = firmaValida(cuerpo, cabeceras['x-wc-webhook-signature']);\n  return { json: procesarEvento(cuerpo, firmaOk, estado, $now.toISO()) };\n});\n"
+      },
+      "id": "code-1",
+      "name": "Aplicar pedido al stock",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ],
+      "notes": "Clave de firma de DEMO, pública a propósito. En producción se lee de la variable de entorno WC_WEBHOOK_SECRET."
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": "={{ $json.http }}"
+        }
+      },
+      "id": "resp-1",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "tienda-demo/inventario",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "wh-2",
+      "name": "Webhook · Ver inventario",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        220
+      ],
+      "webhookId": "tienda-demo-inventario"
+    },
+    {
+      "parameters": {
+        "jsCode": "const m = $getWorkflowStaticData('global');\nconst inicial = {\"tienda\": \"Tostaduría Selva Alta\", \"nota\": \"Tienda ficticia. Productos, precios y stock inventados para la demostración.\", \"productos\": [{\"sku\": \"CAF-VRS-250\", \"product_id\": 101, \"nombre\": \"Café Villa Rica tostado 250 g\", \"stock\": 40, \"minimo\": 10}, {\"sku\": \"CAF-VRS-1K\", \"product_id\": 102, \"nombre\": \"Café Villa Rica tostado 1 kg\", \"stock\": 12, \"minimo\": 4}, {\"sku\": \"CAF-CHA-250\", \"product_id\": 103, \"nombre\": \"Café Chanchamayo orgánico 250 g\", \"stock\": 25, \"minimo\": 8}, {\"sku\": \"CAF-CUS-250\", \"product_id\": 104, \"nombre\": \"Café Cusco geisha 250 g\", \"stock\": 6, \"minimo\": 3}, {\"sku\": \"CAF-DES-250\", \"product_id\": 105, \"nombre\": \"Café descafeinado 250 g\", \"stock\": 9, \"minimo\": 3}, {\"sku\": \"PRE-V60\", \"product_id\": 201, \"nombre\": \"Gotero V60 de cerámica\", \"stock\": 5, \"minimo\": 2}, {\"sku\": \"PRE-PRENSA\", \"product_id\": 202, \"nombre\": \"Prensa francesa 600 ml\", \"stock\": 8, \"minimo\": 2}, {\"sku\": \"ACC-FILTROS\", \"product_id\": 301, \"nombre\": \"Filtros de papel x100\", \"stock\": 30, \"minimo\": 10}, {\"sku\": \"ACC-TAZA\", \"product_id\": 302, \"nombre\": \"Taza de cerámica artesanal\", \"stock\": 3, \"minimo\": 2}, {\"sku\": \"KIT-REGALO\", \"product_id\": 401, \"nombre\": \"Kit regalo café + taza\", \"stock\": 4, \"minimo\": 2}]};\nconst productos = m.inventario ? Object.values(m.inventario) : inicial.productos;\nreturn [{ json: { tienda: inicial.tienda, productos, pedidos: m.pedidos || {} } }];\n"
+      },
+      "id": "code-2",
+      "name": "Leer inventario",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "resp-2",
+      "name": "Responder inventario",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tienda-demo/reiniciar",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "wh-3",
+      "name": "Webhook · Reiniciar demo",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        400
+      ],
+      "webhookId": "tienda-demo-reiniciar"
+    },
+    {
+      "parameters": {
+        "jsCode": "const m = $getWorkflowStaticData('global');\ndelete m.inventario;\ndelete m.pedidos;\nreturn [{ json: { reiniciado: true } }];\n"
+      },
+      "id": "code-3",
+      "name": "Volver al stock inicial",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "firstIncomingItem",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "resp-3",
+      "name": "Responder reinicio",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook · Pedido de WooCommerce": {
+      "main": [
+        [
+          {
+            "node": "Leer cuerpo exacto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer cuerpo exacto": {
+      "main": [
+        [
+          {
+            "node": "Aplicar pedido al stock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aplicar pedido al stock": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook · Ver inventario": {
+      "main": [
+        [
+          {
+            "node": "Leer inventario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer inventario": {
+      "main": [
+        [
+          {
+            "node": "Responder inventario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook · Reiniciar demo": {
+      "main": [
+        [
+          {
+            "node": "Volver al stock inicial",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Volver al stock inicial": {
+      "main": [
+        [
+          {
+            "node": "Responder reinicio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "tienda-demo"
+  },
+  "tags": []
+}
