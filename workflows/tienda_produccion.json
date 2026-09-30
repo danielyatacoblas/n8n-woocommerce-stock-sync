@@ -18,7 +18,7 @@
       "typeVersion": 2,
       "position": [
         0,
-        300
+        0
       ],
       "webhookId": "woocommerce-pedidos"
     },
@@ -34,8 +34,8 @@
       "type": "n8n-nodes-base.extractFromFile",
       "typeVersion": 1,
       "position": [
-        220,
-        300
+        280,
+        0
       ],
       "notes": "Guarda el cuerpo tal como llegó: la firma se calcula sobre esos bytes."
     },
@@ -58,8 +58,8 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        440,
-        300
+        560,
+        0
       ],
       "executeOnce": true,
       "alwaysOutputData": true
@@ -83,8 +83,8 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        660,
-        300
+        840,
+        0
       ],
       "executeOnce": true,
       "alwaysOutputData": true
@@ -98,8 +98,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        880,
-        300
+        1120,
+        0
       ],
       "notes": "Necesita en el servidor de n8n: WC_WEBHOOK_SECRET, NODE_FUNCTION_ALLOW_BUILTIN=crypto y N8N_BLOCK_ENV_ACCESS_IN_NODE=false (ver GUIA.md)."
     },
@@ -116,8 +116,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1100,
-        100
+        1400,
+        0
       ],
       "notes": "Se responde enseguida: WooCommerce desactiva el webhook tras varios avisos sin respuesta."
     },
@@ -159,8 +159,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1100,
-        300
+        1400,
+        200
       ]
     },
     {
@@ -195,8 +195,8 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        1340,
-        60
+        1680,
+        200
       ],
       "notes": "Es la memoria de idempotencia: un pedido ya descontado no vuelve a descontar."
     },
@@ -212,8 +212,8 @@
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
       "position": [
-        1340,
-        220
+        1680,
+        400
       ]
     },
     {
@@ -240,8 +240,8 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        1560,
-        220
+        1960,
+        400
       ]
     },
     {
@@ -256,8 +256,8 @@
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
       "position": [
-        1340,
-        400
+        1680,
+        600
       ]
     },
     {
@@ -291,8 +291,8 @@
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
       "position": [
-        1560,
-        380
+        1960,
+        600
       ]
     },
     {
@@ -313,8 +313,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1560,
-        540
+        1960,
+        800
       ],
       "retryOnFail": true,
       "maxTries": 3,
@@ -335,8 +335,8 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        1780,
-        620
+        2240,
+        800
       ]
     },
     {
@@ -351,8 +351,8 @@
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
       "position": [
-        1100,
-        520
+        1400,
+        400
       ]
     },
     {
@@ -368,8 +368,8 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        1340,
-        580
+        1680,
+        800
       ]
     }
   ],
