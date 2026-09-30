@@ -17,6 +17,8 @@ from pathlib import Path
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+from diseno_canvas import acomodar  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 JS = ROOT / "workflows" / "src" / "sincronizar_pedido.js"
 INVENTARIO = ROOT / "data" / "inventario.json"
@@ -83,6 +85,7 @@ def _responder(nid, nombre, pos, codigo_http="={{ $json.http }}"):
                   "options": {"responseCode": codigo_http}})
 
 
+@acomodar
 def build_demo() -> dict:
     ver = ("const m = $getWorkflowStaticData('global');\n"
            "const inicial = " + json.dumps(json.loads(INVENTARIO.read_text(encoding="utf-8")),
@@ -143,6 +146,7 @@ def _telegram(nid, nombre, texto, pos):
                   "additionalFields": {"appendAttribution": False}})
 
 
+@acomodar
 def build_prod() -> dict:
     nodes = [
         _webhook("wh-1", "Webhook · Pedido de WooCommerce", "POST", "woocommerce-pedidos",

@@ -43,6 +43,91 @@ flowchart TD
 
 ---
 
+## El workflow en n8n
+
+<p align="center"><img src="docs/workflow_n8n.png" alt="Workflow de producción abierto en el editor de n8n" width="900"></p>
+
+<p align="center"><i>Captura del editor de n8n 2.40 con <code>workflows/tienda_produccion.json</code> importado.
+Los triángulos rojos solo indican credenciales por conectar (Google, Telegram, IA).</i></p>
+
+### Paso a paso: un pedido legítimo, su reintento y un pedido falso
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant W as WooCommerce
+    participant N as Webhook (Raw Body)
+    participant C as Code · Aplicar pedido
+    participant P as Sheets · Pedidos
+    participant I as Sheets · Inventario y Kardex
+    W->>N: n.º 1001 processing + firma HMAC
+    N->>C: bytes exactos del cuerpo
+    C->>C: HMAC-SHA256 con $env.WC_WEBHOOK_SECRET ✓
+    C->>P: ¿n.º 1001 ya descontó?
+    P-->>C: no
+    C->>I: stock -2 y fila en el kardex
+    C->>P: n.º 1001 = descontado (appendOrUpdate)
+    C-->>W: 200
+    W->>N: n.º 1001 otra vez (no recibió respuesta a tiempo)
+    N->>C: bytes exactos
+    C->>P: ¿n.º 1001 ya descontó?
+    P-->>C: sí → ignorar
+    C-->>W: 200, el stock no se toca
+    Note over W,N: alguien descubre la URL del webhook
+    W->>N: pedido inventado, firma falsa
+    N->>C: bytes exactos
+    C->>C: HMAC no coincide ✗
+    C-->>W: 401, no se lee ni se toca nada
+```
+
+### Técnicas de n8n que usa
+
+**Sincronización de tienda · producción** · 16 nodos
+
+| Técnica de n8n | Para qué se usa aquí |
+| --- | --- |
+| Disparo por eventos (webhook o trigger de la app) | reacciona al instante, sin revisar cada tanto |
+| Webhook con Raw Body | conserva los bytes exactos para verificar firmas HMAC |
+| Extract from File | lee PDFs o archivos de texto dentro del flujo |
+| Execute Once | lee una hoja completa una sola vez aunque lleguen varios items |
+| Always Output Data | una hoja vacía no corta el flujo |
+| Lectura de otros nodos por nombre ($('Nodo')) | usa datos de pasos anteriores aunque $input traiga otra cosa |
+| Secretos por variables de entorno ($env) | ninguna clave queda escrita en el workflow |
+| Módulo crypto de Node en el nodo Code | calcula firmas HMAC-SHA256 dentro de n8n |
+| Respuesta HTTP con código dinámico | responde 200 o 401 según lo que decidió el flujo |
+| Upsert en Google Sheets (appendOrUpdate) | actualiza la fila si existe o la crea si no |
+| Split Out | convierte una lista en items para procesarlos uno por uno |
+| Salida de error del nodo (On Error → error output) | si un servicio falla, el flujo sigue por otra rama |
+| Reintentos del nodo (Retry On Fail) | absorbe caídas breves de una API externa |
+| HTTP Request con credencial genérica | llama a cualquier API aunque n8n no tenga un nodo para ella |
+
+<details><summary>Nodo por nodo</summary>
+
+| Nodo | Tipo | Configuración |
+| --- | --- | --- |
+| Webhook · Pedido de WooCommerce | Webhook | `POST /woocommerce-pedidos`, Raw Body |
+| Leer cuerpo exacto | Extract from File | operación `text`. Guarda el cuerpo tal como llegó: la firma se calcula sobre esos bytes. |
+| Sheets · Leer inventario | Google Sheets | pestaña `Inventario`, Execute Once, Always Output Data |
+| Sheets · Leer pedidos | Google Sheets | pestaña `Pedidos`, Execute Once, Always Output Data |
+| Aplicar pedido al stock | Code (JavaScript) | 244 líneas generadas desde `workflows/src/`. Necesita en el servidor de n8n: WC_WEBHOOK_SECRET, NODE_FUNCTION_ALLOW_BUILTIN=crypto y N8N_BLOCK_ENV_ACCESS_IN_NODE=false (ver GUIA.md). |
+| Responder a WooCommerce | Respond to Webhook | Se responde enseguida: WooCommerce desactiva el webhook tras varios avisos sin respuesta. |
+| ¿Movió stock? | If | — |
+| Sheets · Guardar estado del pedido | Google Sheets | operación `appendOrUpdate`, pestaña `Pedidos`. Es la memoria de idempotencia: un pedido ya descontado no vuelve a descontar. |
+| Separar movimientos | Split Out | — |
+| Sheets · Kardex | Google Sheets | operación `append`, pestaña `Kardex` |
+| Separar productos a actualizar | Split Out | — |
+| Sheets · Actualizar inventario | Google Sheets | operación `update`, pestaña `Inventario` |
+| WooCommerce · Actualizar stock | HTTP Request | salida de error, 3 intentos. La hoja es la fuente de verdad (también descuenta ventas de la tienda física); aquí se copia el stock a la tienda online. |
+| Telegram · Falló la tienda | Telegram | — |
+| Separar alertas | Split Out | — |
+| Telegram · Alerta de stock | Telegram | — |
+
+</details>
+
+<sub>Tablas generadas del JSON del workflow con <code>python scripts/documentar_workflow.py workflows/tienda_produccion.json</code>.</sub>
+
+---
+
 ## Demo
 
 <!-- VIDEO: arrastra aquí el .mp4 al editar el README en GitHub y deja solo la URL que genera. -->
@@ -242,9 +327,31 @@ gitGraph
    commit id: "feat: draw the Git Flow history as a Mermaid ..."
    checkout develop
    merge feature/diagrama-git
+   branch docs/diagrama-git-flow
+   checkout docs/diagrama-git-flow
+   commit id: "docs: show the branch history as a gitGraph i..."
+   checkout develop
+   merge docs/diagrama-git-flow
+   branch release/v1.1.1
+   checkout release/v1.1.1
+   commit id: "chore(release): prepare v1.1.1"
+   checkout main
+   merge release/v1.1.1 tag: "v1.1.1"
+   checkout develop
+   merge release/v1.1.1
+   branch feature/canvas-ordenado
+   checkout feature/canvas-ordenado
+   commit id: "feat: lay out the canvas from the workflow co..."
+   checkout develop
+   merge feature/canvas-ordenado
+   branch feature/documentar-workflow
+   checkout feature/documentar-workflow
+   commit id: "feat: document the n8n techniques each workfl..."
+   checkout develop
+   merge feature/documentar-workflow
 ```
 
-<p align="center"><i>Historial real del repositorio hasta v1.1.0, generado con
+<p align="center"><i>Historial real del repositorio, generado con
 <code>python scripts/diagrama_git.py</code>.</i></p>
 
 | Rama | Para qué |

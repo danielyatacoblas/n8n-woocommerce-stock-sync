@@ -34,7 +34,7 @@
       "type": "n8n-nodes-base.extractFromFile",
       "typeVersion": 1,
       "position": [
-        220,
+        280,
         0
       ],
       "notes": "Guarda el cuerpo tal como llegó: la firma se calcula sobre esos bytes."
@@ -48,7 +48,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        440,
+        560,
         0
       ],
       "notes": "Clave de firma de DEMO, pública a propósito. En producción se lee de la variable de entorno WC_WEBHOOK_SECRET."
@@ -65,7 +65,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        660,
+        840,
         0
       ]
     },
@@ -84,7 +84,7 @@
       "typeVersion": 2,
       "position": [
         0,
-        220
+        400
       ],
       "webhookId": "tienda-demo-inventario"
     },
@@ -97,8 +97,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        220,
-        220
+        280,
+        400
       ]
     },
     {
@@ -113,8 +113,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        440,
-        220
+        560,
+        400
       ]
     },
     {
@@ -132,7 +132,7 @@
       "typeVersion": 2,
       "position": [
         0,
-        400
+        800
       ],
       "webhookId": "tienda-demo-reiniciar"
     },
@@ -145,8 +145,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        220,
-        400
+        280,
+        800
       ]
     },
     {
@@ -161,8 +161,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        440,
-        400
+        560,
+        800
       ]
     }
   ],
