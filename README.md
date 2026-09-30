@@ -171,6 +171,82 @@ integración, y una rama por cambio. Los merges son `--no-ff` para que cada
 funcionalidad quede como un bloque legible en el historial, y cada versión
 lleva su tag.
 
+```mermaid
+gitGraph
+   commit id: "chore: set up the repository"
+   branch develop
+   checkout develop
+   branch feature/motor-stock
+   checkout feature/motor-stock
+   commit id: "feat: move stock once per WooCommerce order"
+   commit id: "test: cover signatures, idempotency, refunds ..."
+   checkout develop
+   merge feature/motor-stock
+   branch feature/dia-de-pedidos
+   checkout feature/dia-de-pedidos
+   commit id: "feat: generate a day of signed WooCommerce de..."
+   commit id: "feat: simulate the day and print decisions, a..."
+   commit id: "test: final stock must equal the initial stoc..."
+   checkout develop
+   merge feature/dia-de-pedidos
+   branch feature/nodo-n8n
+   checkout feature/nodo-n8n
+   commit id: "feat: port the stock logic to the n8n Code node"
+   commit id: "test: run the n8n node outside n8n and compar..."
+   checkout develop
+   merge feature/nodo-n8n
+   branch feature/workflows
+   checkout feature/workflows
+   commit id: "feat: build the demo and production workflows"
+   commit id: "test: check the workflows keep the raw body, ..."
+   checkout develop
+   merge feature/workflows
+   branch feature/demo-tienda
+   checkout feature/demo-tienda
+   commit id: "feat: add a demo store that fires signed deli..."
+   commit id: "docs: add a screenshot of the demo store driv..."
+   checkout develop
+   merge feature/demo-tienda
+   branch chore/ci
+   checkout chore/ci
+   commit id: "chore: run tests and the day simulation on ev..."
+   checkout develop
+   merge chore/ci
+   branch docs/documentacion
+   checkout docs/documentacion
+   commit id: "docs: explain the three problems a naive stoc..."
+   commit id: "docs: add the production guide and known limits"
+   checkout develop
+   merge docs/documentacion
+   branch release/v1.0.0
+   checkout release/v1.0.0
+   commit id: "chore(release): prepare v1.0.0"
+   checkout main
+   merge release/v1.0.0 tag: "v1.0.0"
+   checkout develop
+   merge release/v1.0.0
+   branch docs/imagenes-readme
+   checkout docs/imagenes-readme
+   commit id: "docs: add architecture and test result images..."
+   checkout develop
+   merge docs/imagenes-readme
+   branch release/v1.1.0
+   checkout release/v1.1.0
+   commit id: "chore(release): prepare v1.1.0"
+   checkout main
+   merge release/v1.1.0 tag: "v1.1.0"
+   checkout develop
+   merge release/v1.1.0
+   branch feature/diagrama-git
+   checkout feature/diagrama-git
+   commit id: "feat: draw the Git Flow history as a Mermaid ..."
+   checkout develop
+   merge feature/diagrama-git
+```
+
+<p align="center"><i>Historial real del repositorio hasta v1.1.0, generado con
+<code>python scripts/diagrama_git.py</code>.</i></p>
+
 | Rama | Para qué |
 | --- | --- |
 | `main` | Solo versiones liberadas. Cada merge lleva su tag. |
